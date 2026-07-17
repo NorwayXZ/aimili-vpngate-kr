@@ -105,6 +105,7 @@ def bounded_int(value: Any, default: int, min_value: int | None = None, max_valu
     return parsed
 
 API_URL = "https://www.vpngate.net/api/iphone/"
+TARGET_COUNTRY_CODES = ("US",)
 FETCH_INTERVAL_SECONDS = env_int("FETCH_INTERVAL_SECONDS", 1260, 1)
 CHECK_INTERVAL_SECONDS = env_int("CHECK_INTERVAL_SECONDS", 1260, 1)
 TARGET_VALID_NODES = env_int("TARGET_VALID_NODES", 3, 1)
@@ -665,6 +666,9 @@ def parse_vpngate_rows(text: str) -> list[dict[str, str]]:
 def decode_config(encoded: str) -> str:
     return base64.b64decode(encoded.encode("ascii"), validate=False).decode("utf-8", errors="replace")
 
+def is_target_country_row(row: dict[str, str]) -> bool:
+    return row.get("CountryShort", "").strip().upper() in TARGET_COUNTRY_CODES
+
 def load_blacklist() -> dict[str, dict[str, Any]]:
     now = time.time()
     raw = read_json(BLACKLIST_FILE, {})
@@ -742,6 +746,8 @@ def fetch_candidates() -> list[dict[str, Any]]:
     blacklist = load_blacklist()
     candidates: list[dict[str, Any]] = []
     seen_ips = set()
+    target_label = ",".join(TARGET_COUNTRY_CODES)
+    api_returned_rows = False
     
     # 检查本地是否有节点缓存，以确定最大重试尝试次数
     has_cache = len(cached_nodes()) > 0
@@ -755,7 +761,7 @@ def fetch_candidates() -> list[dict[str, Any]]:
     if API_URL.startswith("https://"):
         attempts_targets.append((API_URL.replace("https://", "http://"), True))
         
-    log_to_json("INFO", "Main", "开始拉取官方 API 节点列表...")
+    log_to_json("INFO", "Main", f"开始拉取官方 API 节点列表，仅保留国家/地区: {target_label}")
     
     last_err = None
     for url, verify_ssl in attempts_targets:
@@ -768,7 +774,9 @@ def fetch_candidates() -> list[dict[str, Any]]:
                 log_to_json("INFO", "Main", msg)
                 api_text = fetch_api_text(url, verify_ssl)
                 rows = parse_vpngate_rows(api_text)
-                for row in rows[:MAX_SCAN_ROWS]:
+                api_returned_rows = api_returned_rows or bool(rows)
+                target_rows = [row for row in rows if is_target_country_row(row)]
+                for row in target_rows[:MAX_SCAN_ROWS]:
                     ip = row.get("IP", "")
                     if not ip or ip in seen_ips:
                         continue
@@ -797,6 +805,16 @@ def fetch_candidates() -> list[dict[str, Any]]:
             break
             
     if not candidates:
+        if api_returned_rows and last_err is None:
+            diag_msg = f"官方 API 可用，但没有找到可用的 {target_label} 节点。可能是该地区当前无公开 VPNGate 节点，或节点已被黑名单临时跳过。"
+            print(f"[fetch_candidates] {diag_msg}", flush=True)
+            log_to_json("WARNING", "Main", diag_msg)
+            set_state(
+                last_fetch_status="empty",
+                last_fetch_error_code=0,
+                last_fetch_message=diag_msg
+            )
+            raise RuntimeError(diag_msg)
         err_code, diag_msg = vpn_utils.diagnose_api_failure(API_URL)
         full_err_msg = f"获取官方 API 节点最终失败: {last_err} | 诊断结果: {diag_msg}"
         print(f"[错误代码 {err_code}] {full_err_msg}", flush=True)
@@ -814,10 +832,10 @@ def fetch_candidates() -> list[dict[str, Any]]:
     set_state(
         last_fetch_at=time.time(),
         last_fetch_status="ok",
-        last_fetch_message=f"Fetched {len(candidates)} unique candidates across multiple attempts.",
+        last_fetch_message=f"Fetched {len(candidates)} unique {target_label} candidates across multiple attempts.",
         blacklisted_nodes=len(blacklist),
     )
-    log_to_json("INFO", "Main", f"成功获取官方 API 节点，共 {len(candidates)} 个候选节点")
+    log_to_json("INFO", "Main", f"成功获取官方 API 节点，共 {len(candidates)} 个 {target_label} 候选节点")
     return candidates
 
 def cached_nodes() -> list[dict[str, Any]]:
@@ -3144,7 +3162,7 @@ INDEX_HTML = r"""<!doctype html>
   <div class="brand">
     <h1>
       <svg xmlns="http://www.w3.org/2000/svg" style="width:24px; height:24px; color:#818cf8;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
-      AimiliVPN 节点管理系统
+      AimiliVPN US 节点管理系统
     </h1>
     <div id="status" class="status" style="display: none;"><span class="status-dot"></span>服务加载中...</div>
   </div>
@@ -3157,8 +3175,8 @@ INDEX_HTML = r"""<!doctype html>
         <svg xmlns="http://www.w3.org/2000/svg" style="width:12px; height:12px; margin-left: 2px;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" /></svg>
       </button>
       <div id="github_dropdown" class="dropdown-content">
-        <a href="https://github.com/baoweise-bot/aimili-vpngate" target="_blank">正式版</a>
-        <a href="https://github.com/baoweise-bot/aimili-vpngate/tree/bate" target="_blank">测试版</a>
+        <a href="https://github.com/NorwayXZ/aimili-vpngate-us" target="_blank">US 版本</a>
+        <a href="https://github.com/baoweise-bot/aimili-vpngate" target="_blank">上游原版</a>
       </div>
     </div>
     <a href="https://t.me/arestemple" target="_blank" class="btn-telegram">

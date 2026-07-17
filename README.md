@@ -1,4 +1,4 @@
-# AimiliVPN 🌐
+# AimiliVPN US 🌐
 
 Bilingual: [中文](#中文) | [English](#english)
 
@@ -7,7 +7,7 @@ Bilingual: [中文](#中文) | [English](#english)
 <a name="中文"></a>
 ## 中文 (Chinese)
 
-AimiliVPN 是一款基于官方 VPNGate 开放协议的高性能、零依赖 VPN 代理网关。它以纯 Python 标准库编写，内置美观响应式的管理网页，提供智能并发测速、多路由模式、出站代理网关、实时日志等强大功能。
+AimiliVPN US 是一款基于官方 VPNGate 开放协议的高性能、零依赖 VPN 代理网关。它以纯 Python 标准库编写，内置美观响应式的管理网页，提供智能并发测速、多路由模式、出站代理网关、实时日志等强大功能。本版本仅拉取、测速和连接美国（US）VPNGate 节点。
 
 ---
 
@@ -36,7 +36,7 @@ AimiliVPN 是一款基于官方 VPNGate 开放协议的高性能、零依赖 VPN
 
 #### 🌟 正式稳定版本 (main 分支)
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/baoweise-bot/aimili-vpngate/main/install.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/NorwayXZ/aimili-vpngate-us/main/install.sh)
 ```
 > 💡 **小贴士**：部署完成后，终端会输出管理网页的专属链接（含随机安全后缀，如 `http://your_vps_ip:8787/u71e9IXp4TPx`）。在终端中输入 `ml` 命令可以随时调出交互式命令行管理菜单。
 
@@ -51,7 +51,7 @@ bash <(curl -Ls https://raw.githubusercontent.com/baoweise-bot/aimili-vpngate/ma
 
 #### 第二步：获取并连接节点
 1. 首次进入后台，节点列表可能正在进行首次自动测速与拉取。
-2. 点击 **“更新节点”** 按钮（或通过网页下方的网关/日志进行状态检查），程序会在后台通过多线程并发测速，自动筛选出延迟最低、可连接的 VPNGate 节点。
+2. 点击 **“更新节点”** 按钮（或通过网页下方的网关/日志进行状态检查），程序会在后台通过多线程并发测速，自动筛选出延迟最低、可连接的美国 VPNGate 节点。
 3. 选择您喜欢的出站路由模式：
    - **智能自动配置**（推荐）：如果当前连接的节点失效，系统会在数秒内自动漂移连接至其他备用健康节点，无需手动干预。
    - **固定国家地区**：只选择指定国家（如日本 JP、韩国 KR、美国 US）的最佳节点。
@@ -137,7 +137,7 @@ bash <(curl -Ls https://raw.githubusercontent.com/baoweise-bot/aimili-vpngate/ma
 <a name="english"></a>
 ## English
 
-AimiliVPN is a high-performance, zero-dependency VPN proxy gateway built entirely using Python's standard library. It parses official VPNGate servers, benchmarks latency, and routes traffic through a built-in dual-protocol (HTTP/SOCKS5) proxy server.
+AimiliVPN US is a high-performance, zero-dependency VPN proxy gateway built entirely using Python's standard library. It parses official VPNGate servers, benchmarks latency, and routes traffic through a built-in dual-protocol (HTTP/SOCKS5) proxy server. This version only fetches, benchmarks, and connects to United States (US) VPNGate nodes.
 
 ### 🌟 Recommended VPS Deals
 [![BandwagonHost Premium Optimized Routes](https://img.shields.io/badge/BandwagonHost-Premium%20Optimized%20Routes-red?style=for-the-badge)](https://bandwagonhost.com/aff.php?aff=81790)
@@ -163,7 +163,7 @@ Run the corresponding command on your Linux VPS as root:
 
 #### 🌟 Stable Release (main branch)
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/baoweise-bot/aimili-vpngate/main/install.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/NorwayXZ/aimili-vpngate-us/main/install.sh)
 ```
 
 > 💡 **Quick Note**: Once installed, copy the printed URL from the terminal to access the Web UI. Type the `ml` command in the terminal to summon the interactive CLI management console.
@@ -177,7 +177,7 @@ Open your browser and navigate to the printed URL (e.g. `http://your_vps_ip:8787
 
 #### Step 2: Select Node and Mode
 1. Wait for the program to complete its first automatic node speed benchmarks.
-2. Under "Admin", you can trigger node fetching. The backend concurrently tests official VPNGate nodes and ranks them by latency.
+2. Under "Admin", you can trigger node fetching. The backend concurrently tests official United States VPNGate nodes and ranks them by latency.
 3. Switch routes mode (Smart Auto, Specific Region, or Specific Server Node) according to your needs.
 
 #### Step 3: Use Localhost Proxy (Core Step)
