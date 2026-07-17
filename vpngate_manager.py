@@ -106,6 +106,7 @@ def bounded_int(value: Any, default: int, min_value: int | None = None, max_valu
 
 API_URL = "https://www.vpngate.net/api/iphone/"
 TARGET_COUNTRY_CODES = ("KR",)
+TARGET_IP_TYPES = ("residential", "mobile")
 FETCH_INTERVAL_SECONDS = env_int("FETCH_INTERVAL_SECONDS", 1260, 1)
 CHECK_INTERVAL_SECONDS = env_int("CHECK_INTERVAL_SECONDS", 1260, 1)
 TARGET_VALID_NODES = env_int("TARGET_VALID_NODES", 3, 1)
@@ -227,7 +228,7 @@ def load_ui_config() -> dict[str, Any]:
             "proxy_port": LOCAL_PROXY_PORT,
             "routing_mode": "auto",
             "force_country": "",
-            "routing_ip_type": "all",
+            "routing_ip_type": "residential",
             "connection_enabled": True,
             "fixed_node_id": "",
             "favorite_node_ids": [],
@@ -389,7 +390,7 @@ def get_state() -> dict[str, Any]:
     state["proxy_port"] = ui_cfg.get("proxy_port", 7928)
     state["routing_mode"] = ui_cfg.get("routing_mode", "auto")
     state["force_country"] = ui_cfg.get("force_country", "")
-    state["routing_ip_type"] = ui_cfg.get("routing_ip_type", "all")
+    state["routing_ip_type"] = ui_cfg.get("routing_ip_type", "residential")
     state["connection_enabled"] = ui_cfg.get("connection_enabled", True)
     state["fixed_node_id"] = ui_cfg.get("fixed_node_id", "")
     state["favorite_node_ids"] = ui_cfg.get("favorite_node_ids", [])
@@ -682,6 +683,9 @@ def decode_config(encoded: str) -> str:
 def is_target_country_row(row: dict[str, str]) -> bool:
     return row.get("CountryShort", "").strip().upper() in TARGET_COUNTRY_CODES
 
+def is_target_ip_type_node(node: dict[str, Any]) -> bool:
+    return node.get("ip_type") in TARGET_IP_TYPES
+
 def load_blacklist() -> dict[str, dict[str, Any]]:
     now = time.time()
     raw = read_json(BLACKLIST_FILE, {})
@@ -760,7 +764,9 @@ def fetch_candidates() -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
     seen_ips = set()
     target_label = ",".join(TARGET_COUNTRY_CODES)
+    ip_type_label = "住宅/移动"
     api_returned_rows = False
+    target_country_candidate_count = 0
     
     # 检查本地是否有节点缓存，以确定最大重试尝试次数
     has_cache = len(cached_nodes()) > 0
@@ -774,7 +780,7 @@ def fetch_candidates() -> list[dict[str, Any]]:
     if API_URL.startswith("https://"):
         attempts_targets.append((API_URL.replace("https://", "http://"), True))
         
-    log_to_json("INFO", "Main", f"开始拉取官方 API 节点列表，仅保留国家/地区: {target_label}")
+    log_to_json("INFO", "Main", f"开始拉取官方 API 节点列表，仅保留国家/地区: {target_label}，IP 类型: {ip_type_label}")
     
     last_err = None
     for url, verify_ssl in attempts_targets:
@@ -816,10 +822,28 @@ def fetch_candidates() -> list[dict[str, Any]]:
                 log_to_json("WARNING", "Main", f"拉取失败 (URL: {url}, 验证: {verify_ssl}): {e}")
         if candidates:
             break
-            
+
+    target_country_candidate_count = len(candidates)
+    if candidates:
+        try:
+            vpn_utils.enrich_ip_info(candidates)
+        except Exception as ee:
+            print(f"[fetch_candidates] 预筛选 IP 类型失败: {ee}", flush=True)
+            log_to_json("WARNING", "Main", f"预筛选 IP 类型失败: {ee}")
+        filtered_candidates = [node for node in candidates if is_target_ip_type_node(node)]
+        skipped = len(candidates) - len(filtered_candidates)
+        if skipped:
+            msg = f"已跳过 {skipped} 个非{ip_type_label} {target_label} 节点"
+            print(f"[fetch_candidates] {msg}", flush=True)
+            log_to_json("INFO", "Main", msg)
+        candidates = filtered_candidates
+
     if not candidates:
         if api_returned_rows:
-            diag_msg = f"官方 API 可用，但没有找到可用的 {target_label} 节点。可能是该地区当前无公开 VPNGate 节点，或节点已被黑名单临时跳过。"
+            if target_country_candidate_count:
+                diag_msg = f"官方 API 可用，也找到了 {target_country_candidate_count} 个 {target_label} 节点，但没有找到可用的{ip_type_label} IP 节点。可能是当前节点均为机房/代理 IP，或 IP 类型查询失败。"
+            else:
+                diag_msg = f"官方 API 可用，但没有找到可用的 {target_label} 节点。可能是该地区当前无公开 VPNGate 节点，或节点已被黑名单临时跳过。"
             print(f"[fetch_candidates] {diag_msg}", flush=True)
             log_to_json("WARNING", "Main", diag_msg)
             set_state(
@@ -845,10 +869,10 @@ def fetch_candidates() -> list[dict[str, Any]]:
     set_state(
         last_fetch_at=time.time(),
         last_fetch_status="ok",
-        last_fetch_message=f"Fetched {len(candidates)} unique {target_label} candidates across multiple attempts.",
+        last_fetch_message=f"Fetched {len(candidates)} unique {target_label} {ip_type_label} candidates across multiple attempts.",
         blacklisted_nodes=len(blacklist),
     )
-    log_to_json("INFO", "Main", f"成功获取官方 API 节点，共 {len(candidates)} 个 {target_label} 候选节点")
+    log_to_json("INFO", "Main", f"成功获取官方 API 节点，共 {len(candidates)} 个 {target_label} {ip_type_label}候选节点")
     return candidates
 
 def cached_nodes() -> list[dict[str, Any]]:
@@ -1221,7 +1245,7 @@ def apply_routing_filters(
         fav_ids = set(ui_cfg.get("favorite_node_ids", []))
         candidates = [n for n in candidates if n.get("id") in fav_ids]
 
-    routing_ip_type = ui_cfg.get("routing_ip_type", "all")
+    routing_ip_type = ui_cfg.get("routing_ip_type", "residential")
     if routing_ip_type == "residential":
         candidates = [
             n for n in candidates
@@ -1275,7 +1299,7 @@ def validate_node_allowed_by_routing(node: dict[str, Any], ui_cfg: dict[str, Any
         if node_id not in fav_ids:
             raise RuntimeError("当前处于仅用收藏模式，不能连接未收藏节点")
 
-    routing_ip_type = ui_cfg.get("routing_ip_type", "all")
+    routing_ip_type = ui_cfg.get("routing_ip_type", "residential")
     node_ip_type = node.get("ip_type")
     if routing_ip_type == "residential" and node_ip_type not in ("residential", "mobile"):
         raise RuntimeError("当前已锁定住宅 IP 出站，不能连接非住宅节点")
@@ -3187,7 +3211,7 @@ INDEX_HTML = r"""<!doctype html>
   <div class="brand">
     <h1>
       <svg xmlns="http://www.w3.org/2000/svg" style="width:24px; height:24px; color:#818cf8;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
-      AimiliVPN KR 节点管理系统
+      AimiliVPN KR 住宅节点管理系统
     </h1>
     <div id="status" class="status" style="display: none;"><span class="status-dot"></span>服务加载中...</div>
   </div>
@@ -3430,7 +3454,7 @@ INDEX_HTML = r"""<!doctype html>
           
           <div class="form-group" style="margin-bottom: 16px;">
             <label class="form-label">IP 出站类型过滤</label>
-            <input type="hidden" id="net_routing_ip_type" value="all">
+            <input type="hidden" id="net_routing_ip_type" value="residential">
             <div class="option-group" id="routing_ip_type_group">
               <div class="option-card active" data-value="all" onclick="setRoutingIpType('all')">
                 <div class="option-card-title">所有IP</div>
@@ -4343,7 +4367,7 @@ async function toggleFavRouting() {
       body: JSON.stringify({
         routing_mode: newMode,
         force_country: state.force_country || "",
-        routing_ip_type: state.routing_ip_type || "all"
+        routing_ip_type: state.routing_ip_type || "residential"
       })
     });
     const data = await res.json();
@@ -4570,7 +4594,7 @@ function openNetworkModal() {
   if (state) {
     $("net_proxy_port").value = state.proxy_port || 7928;
     const mode = state.routing_mode || "auto";
-    const ipType = state.routing_ip_type || "all";
+    const ipType = state.routing_ip_type || "residential";
     
     selectOptionCard('routing_mode', mode);
     selectOptionCard('routing_ip_type', ipType);
@@ -5491,7 +5515,7 @@ class Handler(BaseHTTPRequestHandler):
                 new_proxy_port = payload.get("proxy_port")
                 routing_mode = str(payload.get("routing_mode") or "auto").strip()
                 force_country = str(payload.get("force_country") or "").strip()
-                routing_ip_type = str(payload.get("routing_ip_type") or "all").strip()
+                routing_ip_type = str(payload.get("routing_ip_type") or "residential").strip()
                 
                 try:
                     new_proxy_port_int = int(new_proxy_port)
@@ -5560,7 +5584,7 @@ class Handler(BaseHTTPRequestHandler):
                 payload = self.read_json_body()
                 routing_mode = str(payload.get("routing_mode") or "auto").strip()
                 force_country = str(payload.get("force_country") or "").strip()
-                routing_ip_type = str(payload.get("routing_ip_type") or "all").strip()
+                routing_ip_type = str(payload.get("routing_ip_type") or "residential").strip()
                 fav_fail_fallback = False
                 
                 if routing_mode not in ("auto", "fixed_ip", "fixed_region", "favorites"):
